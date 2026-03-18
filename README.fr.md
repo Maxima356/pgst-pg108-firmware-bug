@@ -1,88 +1,87 @@
-# PGST PG-108 2G — Défaut de conception firmware : redémarrages répétés & écritures flash excessives (preuves UART)
+# PGST PG-108 2G — Super alarme, mais gros défaut de fiabilité firmware (reboots + corruption)
 
 **Langue :** [English (default)](README.md) | **Français**
 
-## Pourquoi ce dépôt existe
-J’adore cette alarme : très bonne compatibilité (Tuya/Smart Life, nombreux capteurs, etc.).  
-Mais après quelques mois d’utilisation réelle, j’ai observé des **problèmes de stabilité critiques** qui la rendent peu fiable pour un usage “sécurité”.
+## Contexte
+J’aime vraiment cette alarme. Niveau compatibilité elle est top (intégration Tuya/Smart Life, capteurs, etc.).  
+Mais je suis tombé sur un **problème majeur de fiabilité**, au point que je ne peux pas lui faire confiance pour la sécurité.
 
-Ce dépôt regroupe :
-- symptômes vus en conditions réelles (redémarrages, voix aléatoire)
-- logs UART comme preuves
-- analyse technique suggérant un **défaut de conception firmware** : checks modem en boucle + **écritures trop fréquentes en mémoire non volatile** (flash/EEPROM), pouvant mener à de l’usure/corruption et à de l’instabilité.
+Ce dépôt regroupe mon report détaillé avec preuves (photos + logs UART).
 
 **Appareil :** PGST Alarm Host **PG-108 2G**  
-**Firmware :** `FIRMWARE: v1.25.03.n5` (vu dans les logs UART)
+**Alarme #1 firmware :** `v1.25.03.n5` (UART)  
+**Alarme #2 (remplacement) firmware :** `v1.24.12.n5` (plus ancien, mais problème identique)
 
 ---
 
-## Symptômes observés
-### 1) Redémarrages répétés / instabilité
-Le panneau redémarre parfois de manière répétée (dans mon cas, ça peut arriver environ toutes les heures).
+## Ce que j’ai observé (utilisation réelle)
+### 1) Redémarrages / instabilité
+J’ai d’abord vu des redémarrages via les logs debug Tuya, puis j’ai approfondi avec l’UART.
 
 **Impact sécurité :**  
-Pendant un reboot, l’alarme peut être temporairement inefficace. Si un cambriolage survient à ce moment-là, c’est une vulnérabilité réelle.  
-Si la sirène est en cours et que l’unité redémarre, la sirène peut s’arrêter.
+Si un cambriolage arrive pendant un reboot, l’alarme peut être inefficace.  
+Et si la sirène sonne puis que l’unité redémarre, la sirène peut s’arrêter.
 
-### 2) Voix aléatoire en pleine nuit
-Deux fois en ~4–5 mois, l’alarme s’est mise à parler toute seule en pleine nuit, sans interaction utilisateur.
+### 2) Le journal à l’écran montre des signes clairs de corruption
+Dans les journaux (alarmes / armements), je vois des dates/heures impossibles :
+
+- `65535-256-255 255:255:255`
+
+Et des libellés d’événements dans des langues incohérentes ou des caractères corrompus, par exemple :
+- `Péntek` (hongrois)
+- `Odłączenie zasilania` (polonais)
+- `Telefonado … Online` (mélangé / incohérent)
+- caractères “bizarres” type `Шэ9?b?` (exemple sur photo)
+
+Ça ressemble à des valeurs non initialisées / corrompues dans la mémoire persistante.
+
+### 3) Voix qui parle toute seule (alarme #1)
+Sur la première alarme, 2 fois en ~4–5 mois, l’alarme s’est mise à parler toute seule en pleine nuit (sans interaction).
 
 ---
 
-## Preuves (log UART)
-J’ai d’abord remarqué des redémarrages fréquents en surveillant le debug côté Tuya, puis j’ai approfondi avec l’UART du MCU principal.
+## Le modèle de remplacement a aussi le problème
+Après mon report, on m’a envoyé une deuxième alarme.
 
-La sortie UART montre :
+- Elle tourne sur un firmware **plus ancien** (`v1.24.12.n5`)
+- Après seulement 1–2 semaines, je constate déjà des entrées “corrompues” dans les journaux à l’écran
+- Et les redémarrages continuent (j’ai même l’impression que c’est plus fréquent)
+
+Donc ça ne ressemble pas à un cas isolé.
+
+---
+
+## Preuves UART (capture 1 minute)
+La sortie UART contient :
 - message de boot avec faute : **`hello wrold.`**
-- polling modem GSM en boucle : `AT+CSQ`, `AT+CGREG?`
-- `+CGREG: 0,0` (pas enregistré, par exemple pas de SIM / pas de réseau)
-- lignes indiquant fortement l’appel d’une routine d’écriture flash :
-  `struParaRunning Flash Program End, ...`
+- boucle de polling du modem GSM : `AT+CSQ`, `AT+CGREG?` avec `+CGREG: 0,0`
+- message répété qui ressemble à un appel d’écriture flash :
+  `struParaRunning Flash Program End...`
 
-Un log **expurgé** d’1 minute est inclus (recommandé) :
+Un extrait **expurgé** est fourni :
 - `evidence/log_redacted_1min.txt`
 
-Les infos sensibles doivent être supprimées :
-- MAC Wi‑Fi
-- IMEI (GSN)
-- `magicCode`
+---
+
+## Ce que je pense qu’il se passe (hypothèse)
+Je ne peux pas le prouver à 100% sans dump/sniff de l’activité flash, mais le pattern suggère fortement :
+
+- quand l’enregistrement GSM échoue (`CGREG 0,0`), le firmware boucle sur le polling  
+- en même temps, il déclenche des écritures non volatiles de manière répétée (`Flash Program End` revient souvent)
+
+Des écritures flash trop fréquentes peuvent expliquer :
+- corruption (dates impossibles, langues mélangées, caractères bizarres)
+- instabilité / redémarrages
 
 ---
 
-## Analyse technique (hypothèse)
-Le pattern de logs suggère que le firmware :
-1. boucle sur des checks modem quand l’enregistrement réseau échoue (`CGREG 0,0`)
-2. déclenche très souvent des écritures en mémoire non volatile (via la répétition de `Flash Program End`)
+## Aide de la communauté / retours d’expérience
+Si vous avez :
+- le même souci sur **PGST PG-108 2G** (ou variante proche),
+- une explication de ce que signifie exactement `struParaRunning Flash Program End...`,
+- déjà réussi à accéder au **SWD** / extraire des infos utiles sur cette carte,
+- ou déjà décodé le protocole série MCU↔Wi‑Fi (Tuya MCU),
 
-La flash a une endurance limitée. Trop de cycles écriture/effacement peuvent provoquer :
-- corruption de configuration (voix/heure/langue)
-- instabilité / reboots
-- panne à terme
+je suis preneur : ouvrez une issue ou partagez vos infos.
 
-Même sans “preuve électrique” d’usure, la répétition de “Flash Program End” pendant un polling fréquent est un gros signal de défaut de fiabilité.
-
----
-
-## Correctifs firmware suggérés (côté fabricant)
-- Limiter la fréquence des checks modem (backoff).
-- Ne jamais écrire en flash à chaque itération.
-- Écrire seulement si changement + max toutes les N minutes.
-- Stockage plus robuste (journal / wear leveling).
-- Garder la fonction alarme stable même si le GSM est indisponible.
-
----
-
-## Appel à la communauté / prochaines étapes
-J’ai d’abord remarqué des redémarrages fréquents en surveillant le debug côté Tuya. J’ai ensuite approfondi avec l’UART du MCU principal et capturé les logs présents dans ce dépôt, qui suggèrent une cause possible (polling modem en boucle + commits trop fréquents en mémoire non volatile).
-
-**Objectif suivant :** confirmer l’hypothèse en corrélant les messages UART avec une vraie activité d’écriture flash (sniff SPI / analyse de contenu), et voir s’il existe une mitigation côté firmware (limitation de fréquence, stratégie de sauvegarde, etc.).
-
-Si quelqu’un a :
-- déjà rencontré le même problème sur **PGST PG-108 2G** (ou variantes proches),
-- réussi à accéder au **SWD** / extraire des infos utiles (sans publier de binaire propriétaire),
-- décodé le protocole série MCU↔Wi‑Fi (Tuya MCU) sur ce modèle,
-- ou comprend la signification de `struParaRunning Flash Program End...`,
-
-je suis preneur : ouvrez une issue / partagez vos infos.
-
-**Note légale/sécurité :** je m’intéresse uniquement à l’analyse et à la fiabilité sur du matériel que je possède. Je ne souhaite pas publier de firmwares propriétaires ni aider à distribuer du code protégé.
+**Note légale :** je m’intéresse uniquement à l’analyse et à des corrections de fiabilité sur du matériel que je possède. Je ne souhaite pas publier de firmwares propriétaires ni aider à distribuer du code protégé.
