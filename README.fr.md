@@ -61,6 +61,7 @@ La sortie UART contient :
 Un extrait **expurgé** est fourni :
 - `evidence/log_redacted_1min.txt`
 
+Mais une impossibilité grâce à l'UART de communiquer avec l'alarme (Echo Local). Est une impossibilité d'entrée dans le mode Boot avec une combinaison de touche.
 ---
 
 ## Ce que je pense qu’il se passe (hypothèse)
@@ -72,6 +73,15 @@ Je ne peux pas le prouver à 100% sans dump/sniff de l’activité flash, mais l
 Des écritures flash trop fréquentes peuvent expliquer :
 - corruption (dates impossibles, langues mélangées, caractères bizarres)
 - instabilité / redémarrages
+
+---
+
+Infos matériel (PCB / composants)
+
+- Référence PCB (sérigraphie) : 4G/2G_V1.0 — 2024-02-22
+- MCU principal : Nation N32G455 (Cortex‑M)
+- Module Wi‑Fi : Tuya CB3S (BK7231N)
+- Flash SPI externe : BoyalMicro 25Q64ESSIG (64 Mbits / 8 Mo)
 
 ---
 
